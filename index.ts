@@ -1,9 +1,14 @@
 import puppeteer from "puppeteer";
 import fs from "fs";
+import { v4 as uuidv4 } from "uuid";
 
 const url = "https://quotes.toscrape.com/";
 
-const webScraperTechnical = async (url: string) => {
+const webScraperTechnical = async (
+  url: string,
+  depthNumber: number,
+  linkNumber: number
+) => {
   // Launch the browser and open a new blank page
   const browser = await puppeteer.launch({
     headless: false,
@@ -16,8 +21,17 @@ const webScraperTechnical = async (url: string) => {
 
   //   Take an html body and remove all _attributes + nav tags
   const cleanHTML = async () => {
+    let randomId = uuidv4();
     const regex = /(<nav\b[^>]*>[\s\S]*?<\/nav>)|(\s*\S*\="[^"]+"\s*)/gm;
-    return await htmlBody.replace(regex, "");
+    const cleanedHTML = await htmlBody.replace(regex, "");
+    fs.mkdir("output", () => {
+      console.log("making directory");
+    });
+    fs.writeFile(`output/cleanedhtml${randomId}`, cleanedHTML, (err) => {
+      // In case of a error throw err.
+      if (err) throw err;
+    });
+    return "html cleaned?";
   };
 
   //   Calculates kilobyte size of the current page
@@ -33,8 +47,8 @@ const webScraperTechnical = async (url: string) => {
       const aTagsData = document.querySelectorAll("a");
       const links = [];
 
-      Array.from(aTagsData).forEach((tag, idx) => {
-        if (idx < numberOfLinks) {
+      Array.from(aTagsData).forEach((tag: HTMLAnchorElement, idx: number) => {
+        if (idx < numberOfLinks && tag instanceof HTMLAnchorElement) {
           links.push(tag.href);
         } else {
           console.log("jumpscare");
@@ -45,53 +59,74 @@ const webScraperTechnical = async (url: string) => {
     return result;
   };
 
-  //   const cleanedHtml = await cleanHTML();
-  //   const kilobyteSize = await getHTMLSize();
-  //   fs.mkdir("output", () => {
-  //     console.log("making directory");
-  //   });
+  const cleanedHtml = await cleanHTML();
+  const kilobyteSize = await getHTMLSize();
 
-  //   fs.writeFile("output/Hello.txt", cleanedHtml, (err) => {
-  //     // In case of a error throw err.
-  //     if (err) throw err;
-  //   });
-  //   let depth = 2;
-  let firstPageList = await getTags(5);
-  let allData = [{ id: 0, data: firstPageList }];
-
-  const visitPages = async (depth: number) => {
-    let counter = 0;
-    while (counter < depth) {
-      console.log("counter is ", counter);
-      //   console.log("alll data", allData);
-      let currentDepthArr = allData[counter]?.data;
-      console.log("currentDepthArr", currentDepthArr);
-      if (currentDepthArr.length) {
-        for (let link of currentDepthArr) {
-          console.log("link ", link);
-          try {
-            const newPage = await browser.newPage();
-            await newPage.goto(link, { waitUntil: "networkidle2" });
-            await newPage.waitForSelector("body");
-
-            const newTags = await getTags(2);
-            console.log("counter here", counter);
-            const newObj = { id: counter + 1, data: newTags };
-            newObj.data = newTags;
-            allData.push(newObj);
-            await newPage.close();
-          } catch (error) {
-            console.error("Error when visiting pages:", error);
-          }
-        }
-        counter++;
-      }
-      return;
-    }
+  const isValidUrl = (urlString) => {
+    var urlPattern = new RegExp(
+      "^(https?:\\/\\/)?" + // validate protocol
+        "((([a-z\\d]([a-z\\d-]*[a-z\\d])*)\\.)+[a-z]{2,}|" + // validate domain name
+        "((\\d{1,3}\\.){3}\\d{1,3}))" + // validate OR ip (v4) address
+        "(\\:\\d+)?(\\/[-a-z\\d%_.~+]*)*" + // validate port and path
+        "(\\?[;&a-z\\d%_.~+=-]*)?" + // validate query string
+        "(\\#[-a-z\\d_]*)?$",
+      "i"
+    ); // validate fragment locator
+    return !!urlPattern.test(urlString);
   };
 
-  console.log(await visitPages(1));
-  console.log("data after while loop", allData);
+  const visitDepthPagesAndClean = async (depth: number) => {
+    let firstPageList = await getTags(linkNumber);
+    firstPageList.forEach(async (link) => {
+      const newPage = await browser.newPage();
+      await newPage.goto(link, { waitUntil: "networkidle2" });
+      await newPage.waitForSelector("body");
+      // Clean Page HTML
+      console.log("first page clean ");
+      await cleanHTML();
+    });
+    let allData = [{ page: 0, data: firstPageList }];
+    let counter = 0;
+    while (counter < depth) {
+      let list = [];
+      let currentDepthArr = allData[counter]?.data; // ['','','']
+      let newId = counter + 1;
+      let newObjDepth = { page: newId, data: [] };
+      if (currentDepthArr.length) {
+        for (let idx = 0; idx < currentDepthArr.length; idx++) {
+          let link = currentDepthArr[idx];
+          if (isValidUrl(link)) {
+            try {
+              const newPage = await browser.newPage();
+              await newPage.goto(link, { waitUntil: "networkidle2" });
+              await newPage.waitForSelector("body");
+              // Clean Page HTML
+              await cleanHTML();
+
+              const newTags = await getTags(2);
+              list.push(...newTags);
+
+              await newPage.close();
+            } catch (error) {
+              console.error("Error when visiting pages:", error);
+            }
+          } else {
+            console.log("invalid url");
+          }
+        }
+        newObjDepth.data = list;
+        allData.push(newObjDepth);
+
+        counter++;
+      } else {
+        counter++;
+        // return;
+      }
+    }
+    return allData;
+  };
+
+  console.log(await visitDepthPagesAndClean(depthNumber));
 
   //   console.log(await getTags(2));
 
@@ -101,4 +136,4 @@ const webScraperTechnical = async (url: string) => {
 };
 // const url = process.argv[2]; // Get the first command line argument
 
-webScraperTechnical(url);
+webScraperTechnical(url, 2, 2);
