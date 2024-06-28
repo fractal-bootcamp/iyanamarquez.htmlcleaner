@@ -54,6 +54,7 @@ const webScraperTechnical = async (
           console.log("jumpscare");
         }
       });
+
       return links;
     }, numberOfLinks);
     return result;
@@ -82,8 +83,6 @@ const webScraperTechnical = async (
       await newPage.goto(link, { waitUntil: "networkidle2" });
       await newPage.waitForSelector("body");
       // Clean Page HTML
-      console.log("first page clean ");
-      await cleanHTML();
     });
     let allData = [{ page: 0, data: firstPageList }];
     let counter = 0;
@@ -100,9 +99,6 @@ const webScraperTechnical = async (
               const newPage = await browser.newPage();
               await newPage.goto(link, { waitUntil: "networkidle2" });
               await newPage.waitForSelector("body");
-              // Clean Page HTML
-              await cleanHTML();
-
               const newTags = await getTags(2);
               list.push(...newTags);
 
@@ -126,10 +122,21 @@ const webScraperTechnical = async (
     return allData;
   };
 
-  console.log(await visitDepthPagesAndClean(depthNumber));
-
-  //   console.log(await getTags(2));
-
+  const allData = await visitDepthPagesAndClean(depthNumber);
+  const cleanAllLinks = async (allData) => {
+    for (let i = 0; i < allData.length; i++) {
+      let currentDepth = allData[i].data;
+      for (let j = 0; j < currentDepth.length; j++) {
+        let link = currentDepth[j];
+        const newPage = await browser.newPage();
+        await newPage.goto(link, { waitUntil: "networkidle2" });
+        await newPage.waitForSelector("body");
+        await cleanHTML();
+        await newPage.close();
+      }
+    }
+  };
+  await cleanAllLinks(allData);
   await page.setViewport({ width: 1080, height: 1024 });
 
   await browser.close();
